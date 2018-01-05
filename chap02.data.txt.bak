@@ -1,0 +1,556 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# chap_02_01_Data_Graph.py 
+#계산 그래프의 연산(쿡북64)
+#placeholder를 사용한 계산 그래프의 연산
+#구구단3단
+# Operations on a Computational Graph
+import numpy as np
+import tensorflow as tf
+import os
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Create graph
+sess = tf.Session()
+
+# Create tensors
+
+# Create data to feed in
+x_vals = np.array([1., 3., 5., 7., 9.]) #입력할데이터셋
+x_data = tf.placeholder(tf.float32)#입력을 위한 placeholder
+m = tf.constant(3.) #단수:3단
+
+# Multiplication
+prod = tf.multiply(x_data, m) #어떤수*3
+for x_val in x_vals:
+    print(sess.run(prod, feed_dict={x_data: x_val}))
+
+merged = tf.summary.merge_all()
+if not os.path.exists('tensorboard_logs/'):
+    os.makedirs('tensorboard_logs/')
+
+my_writer = tf.summary.FileWriter('tensorboard_logs/', sess.graph)
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#chap_02_02_Multi_Compute.py(쿡북66-67)
+p67
+prod1: #(3*5)'(5*1) => (3*1)
+prod2: #(3*1)'(상수) => (3*1)
+add1: #(3*1)'(상수) => (3*1)
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+#chap_02_03_Multi_Compute.py
+# Working with Multiple Layers  
+
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+import os
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Create graph
+sess = tf.Session()
+
+# Create tensors
+
+# Create a small random 'image' of size 4x4
+x_shape = [1, 4, 4, 1]
+x_val = np.random.uniform(size=x_shape)
+
+x_data = tf.placeholder(tf.float32, shape=x_shape)
+
+# Create a layer that takes a spatial moving window average
+# Our window will be 2x2 with a stride of 2 for height and width
+# The filter value will be 0.25 because we want the average of the 2x2 window
+my_filter = tf.constant(0.25, shape=[2, 2, 1, 1])
+my_strides = [1, 2, 2, 1]
+mov_avg_layer= tf.nn.conv2d(x_data, my_filter, my_strides,
+                            padding='SAME', name='Moving_Avg_Window')
+
+#stride = 2 이므로 4,4가 2,2가 된다.
+#x_data                  my_filter                 결과
+#(1, 4, 4, 1)            (2, 2, 1, 1)           (1, 2, 2, 1)    
+
+#squeeze: shape에서 크기가 1인 항목들을 모두제거한다.
+#t 의 shape(1,2,2,1)이라고 할때, tf.squeeze(t)라고 하면 shape(2,2)가 된다.
+#tf.squeeze(t, axis = [3])이라고 하면, shape(1,2,2)가 된다.
+
+
+
+# Define a custom layer which will be sigmoid(Ax+b) where
+# x is a 2x2 matrix and A and b are 2x2 matrices
+def custom_layer(input_matrix):
+    input_matrix_sqeezed = tf.squeeze(input_matrix)
+    A = tf.constant([[1., 2.], [-1., 3.]])
+    b = tf.constant(1., shape=[2, 2])
+    temp1 = tf.matmul(A, input_matrix_sqeezed)
+    temp = tf.add(temp1, b) # Ax + b
+    return(tf.sigmoid(temp))
+
+# Add custom layer to graph
+with tf.name_scope('Custom_Layer') as scope:
+    custom_layer1 = custom_layer(mov_avg_layer)
+
+# The output should be an array that is 2x2, but size (1,2,2,1)
+#print(sess.run(mov_avg_layer, feed_dict={x_data: x_val}))
+
+# After custom operation, size is now 2x2 (squeezed out size 1 dims)
+print(sess.run(custom_layer1, feed_dict={x_data: x_val}))
+
+merged = tf.summary.merge_all(key='summaries')
+
+if not os.path.exists('tensorboard_logs/'):
+    os.makedirs('tensorboard_logs/')
+
+my_writer = tf.summary.FileWriter('tensorboard_logs/', sess.graph)
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Loss Functions
+#----------------------------------
+#
+#  This python script illustrates the different
+#  loss functions for regression and classification.
+
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Create graph
+sess = tf.Session()
+
+###### Numerical Predictions ######
+#시점과ㅏ 종점을 포함한 500개 데이터
+x_vals = tf.linspace(-1., 1., 500)
+target = tf.constant(0.)
+
+# L2 loss지금까지 해왔던 방식이다.
+# L = (pred - actual)^2
+#대상과의 거리제곱함을 취한다.
+l2_y_vals = tf.square(target - x_vals)
+l2_y_out = sess.run(l2_y_vals)
+
+# L1 loss
+# L = abs(pred - actual): 대상 값과의 절대값을 취한다.
+l1_y_vals = tf.abs(target - x_vals)
+l1_y_out = sess.run(l1_y_vals)
+
+# Pseudo-Huber loss
+#의사 후버 비용함수: 대상값에서 많이 볼록하고, 멀어질수록 더 날카로운 형태의 비용함수
+#L1과 L2의 장점을 섞어 놓은 함수
+# L = delta^2 * (sqrt(1 + ((pred - actual)/delta)^2) - 1)
+delta1 = tf.constant(0.25)
+phuber1_y_vals = tf.multiply(tf.square(delta1), tf.sqrt(1. + tf.square((target - x_vals)/delta1)) - 1.)
+phuber1_y_out = sess.run(phuber1_y_vals)
+
+delta2 = tf.constant(5.)
+phuber2_y_vals = tf.multiply(tf.square(delta2), tf.sqrt(1. + tf.square((target - x_vals)/delta2)) - 1.)
+phuber2_y_out = sess.run(phuber2_y_vals)
+
+# Plot the output:
+x_array = sess.run(x_vals)
+plt.plot(x_array, l2_y_out, 'b-', label='L2 Loss')
+plt.plot(x_array, l1_y_out, 'r--', label='L1 Loss')
+plt.plot(x_array, phuber1_y_out, 'k-.', label='P-Huber Loss (0.25)')
+plt.plot(x_array, phuber2_y_out, 'g:', label='P-Huber Loss (5.0)')
+plt.ylim(-0.2, 0.4)
+plt.legend(loc='lower right', prop={'size': 11})
+plt.show()
+
+
+###### Categorical Predictions ######
+x_vals = tf.linspace(-3., 5., 500)
+target = tf.constant(1.)
+targets = tf.fill([500,], 1.)
+
+# Hinge loss : 힌지비용함수 
+# SVM에서 많이 사용됨(4장) 카페 1203번 참고
+# 이분법에서 0과 1로 분류했었는데 SVM은 -1과 1로 나뉜다.
+
+# Use for predicting binary (-1, 1) classes
+# L = max(0, 1 - (pred * actual))
+hinge_y_vals = tf.maximum(0., 1. - tf.multiply(target, x_vals))
+hinge_y_out = sess.run(hinge_y_vals)
+
+# Cross entropy loss
+# L = -actual * (log(pred)) - (1-actual)(log(1-pred))
+xentropy_y_vals = - tf.multiply(target, tf.log(x_vals)) - tf.multiply((1. - target), tf.log(1. - x_vals))
+xentropy_y_out = sess.run(xentropy_y_vals)
+
+#시그모이드 교차 엔트로피
+#교차 엔트로피 비용 함수에 넣기 전에 시그모이드 함수로 먼저 변환 시켜주는 함수
+
+# L = -actual * (log(sigmoid(pred))) - (1-actual)(log(1-sigmoid(pred)))
+# or
+# L = max(actual, 0) - actual * pred + log(1 + exp(-abs(actual)))
+x_val_input = tf.expand_dims(x_vals, 1)
+target_input = tf.expand_dims(targets, 1)
+xentropy_sigmoid_y_vals = tf.nn.sigmoid_cross_entropy_with_logits(labels=target_input, logits=x_val_input)
+xentropy_sigmoid_y_out = sess.run(xentropy_sigmoid_y_vals)
+
+# Weighted (softmax) cross entropy loss
+# 시그모이드 교차 엔트로피 비용함수에 가중치를 추가한것
+# L = -actual * (log(pred)) * weights - (1-actual)(log(1-pred))
+# or
+# L = (1 - pred) * actual + (1 + (weights - 1) * pred) * log(1 + exp(-actual))
+weight = tf.constant(0.5)
+xentropy_weighted_y_vals = tf.nn.weighted_cross_entropy_with_logits(targets, x_vals, weight)
+xentropy_weighted_y_out = sess.run(xentropy_weighted_y_vals)
+
+# Plot the output
+x_array = sess.run(x_vals)
+plt.plot(x_array, hinge_y_out, 'b-', label='Hinge Loss')
+plt.plot(x_array, xentropy_y_out, 'r--', label='Cross Entropy Loss')
+plt.plot(x_array, xentropy_sigmoid_y_out, 'k-.', label='Cross Entropy Sigmoid Loss')
+plt.plot(x_array, xentropy_weighted_y_out, 'g:', label='Weighted Cross Entropy Loss (x0.5)')
+plt.ylim(-1.5, 3)
+#plt.xlim(-1, 3)
+plt.legend(loc='lower right', prop={'size': 11})
+plt.show()
+
+# Softmax entropy loss : 소프트맥스 엔트로피 비용함수
+
+# L = -actual * (log(softmax(pred))) - (1-actual)(log(1-softmax(pred)))
+unscaled_logits = tf.constant([[1., -3., 10.]])
+target_dist = tf.constant([[0.1, 0.02, 0.88]])
+softmax_xentropy = tf.nn.softmax_cross_entropy_with_logits(logits=unscaled_logits,
+                                                           labels=target_dist)
+
+#비용함수의 차이점: 쿡북80-81
+print(sess.run(softmax_xentropy))
+
+# Sparse entropy loss
+# Use when classes and targets have to be mutually exclusive
+# L = sum( -actual * log(pred) )
+unscaled_logits = tf.constant([[1., -3., 10.]])
+sparse_target_dist = tf.constant([2])
+sparse_xentropy =  tf.nn.sparse_softmax_cross_entropy_with_logits(logits=unscaled_logits,
+                                                                  labels=sparse_target_dist)
+print(sess.run(sparse_xentropy))
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Back Propagation
+#----------------------------------
+#
+# This python function shows how to implement back propagation
+# in regression and classification models.
+
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Create graph
+sess = tf.Session()
+
+# Regression Example:
+# We will create sample data as follows:
+# x-data: 100 random samples from a normal ~ N(1, 0.1)
+# target: 100 values of the value 10.
+# We will fit the model:
+# x-data * A = target
+# Theoretically, A = 10.
+
+# Create data
+x_vals = np.random.normal(1, 0.1, 100)
+y_vals = np.repeat(10., 100)
+x_data = tf.placeholder(shape=[1], dtype=tf.float32)
+y_target = tf.placeholder(shape=[1], dtype=tf.float32)
+
+# Create variable (one model parameter = A)
+A = tf.Variable(tf.random_normal(shape=[1]))
+
+# Add operation to graph
+my_output = tf.multiply(x_data, A)
+
+# Add L2 loss operation to graph
+loss = tf.square(my_output - y_target)
+
+# Initialize variables
+init = tf.global_variables_initializer()
+sess.run(init)
+
+# Create Optimizer
+my_opt = tf.train.GradientDescentOptimizer(0.02)
+train_step = my_opt.minimize(loss)
+
+# Run Loop
+for i in range(100):
+    rand_index = np.random.choice(100)
+    rand_x = [x_vals[rand_index]]
+    rand_y = [y_vals[rand_index]]
+    sess.run(train_step, feed_dict={x_data: rand_x, y_target: rand_y})
+    if (i+1)%25==0:
+        print('Step #' + str(i+1) + ' A = ' + str(sess.run(A)))
+        print('Loss = ' + str(sess.run(loss, feed_dict={x_data: rand_x, y_target: rand_y})))
+
+# Classification Example
+# We will create sample data as follows:
+# x-data: sample 50 random values from a normal = N(-1, 1)
+#         + sample 50 random values from a normal = N(1, 1)
+# target: 50 values of 0 + 50 values of 1.
+#         These are essentially 100 values of the corresponding output index
+# We will fit the binary classification model:
+# If sigmoid(x+A) < 0.5 -> 0 else 1
+# Theoretically, A should be -(mean1 + mean2)/2
+
+ops.reset_default_graph()
+
+# Create graph
+sess = tf.Session()
+
+# Create data
+x_vals = np.concatenate((np.random.normal(-1, 1, 50), np.random.normal(3, 1, 50)))
+y_vals = np.concatenate((np.repeat(0., 50), np.repeat(1., 50)))
+x_data = tf.placeholder(shape=[1], dtype=tf.float32)
+y_target = tf.placeholder(shape=[1], dtype=tf.float32)
+
+# Create variable (one model parameter = A)
+A = tf.Variable(tf.random_normal(mean=10, shape=[1]))
+
+# Add operation to graph
+# Want to create the operstion sigmoid(x + A)
+# Note, the sigmoid() part is in the loss function
+my_output = tf.add(x_data, A)
+
+# Now we have to add another dimension to each (batch size of 1)
+my_output_expanded = tf.expand_dims(my_output, 0)
+y_target_expanded = tf.expand_dims(y_target, 0)
+
+# Initialize variables
+init = tf.global_variables_initializer()
+sess.run(init)
+
+# Add classification loss (cross entropy)
+xentropy = tf.nn.sigmoid_cross_entropy_with_logits(logits=my_output_expanded, labels=y_target_expanded)
+
+# Create Optimizer
+my_opt = tf.train.GradientDescentOptimizer(0.05)
+train_step = my_opt.minimize(xentropy)
+
+# Run loop
+for i in range(1400):
+    rand_index = np.random.choice(100)
+    rand_x = [x_vals[rand_index]]
+    rand_y = [y_vals[rand_index]]
+    
+    sess.run(train_step, feed_dict={x_data: rand_x, y_target: rand_y})
+    if (i+1)%200==0:
+        print('Step #' + str(i+1) + ' A = ' + str(sess.run(A)))
+        print('Loss = ' + str(sess.run(xentropy, feed_dict={x_data: rand_x, y_target: rand_y})))
+        
+# Evaluate Predictions
+predictions = []
+for i in range(len(x_vals)):
+    x_val = [x_vals[i]]
+    prediction = sess.run(tf.round(tf.sigmoid(my_output)), feed_dict={x_data: x_val})
+    predictions.append(prediction[0])
+    
+accuracy = sum(x==y for x,y in zip(predictions, y_vals))/100.
+print('Ending Accuracy = ' + str(np.round(accuracy, 2)))
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Batch and Stochastic Training
+#----------------------------------
+#
+#  This python function illustrates two different training methods:
+#  batch and stochastic training.  For each model, we will use
+#  a regression model that predicts one model variable.
+
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# We will implement a regression example in stochastic and batch training
+
+# Stochastic Training:
+# Create graph
+sess = tf.Session()
+
+# Create data
+x_vals = np.random.normal(1, 0.1, 100)
+y_vals = np.repeat(10., 100)
+x_data = tf.placeholder(shape=[1], dtype=tf.float32)
+y_target = tf.placeholder(shape=[1], dtype=tf.float32)
+
+# Create variable (one model parameter = A)
+A = tf.Variable(tf.random_normal(shape=[1]))
+
+# Add operation to graph
+my_output = tf.multiply(x_data, A)
+
+# Add L2 loss operation to graph
+loss = tf.square(my_output - y_target)
+
+# Initialize variables
+init = tf.global_variables_initializer()
+sess.run(init)
+
+# Create Optimizer
+my_opt = tf.train.GradientDescentOptimizer(0.02)
+train_step = my_opt.minimize(loss)
+
+loss_stochastic = []
+# Run Loop
+for i in range(100):
+    rand_index = np.random.choice(100)
+    rand_x = [x_vals[rand_index]]
+    rand_y = [y_vals[rand_index]]
+    sess.run(train_step, feed_dict={x_data: rand_x, y_target: rand_y})
+    if (i+1)%5==0:
+        print('Step #' + str(i+1) + ' A = ' + str(sess.run(A)))
+        temp_loss = sess.run(loss, feed_dict={x_data: rand_x, y_target: rand_y})
+        print('Loss = ' + str(temp_loss))
+        loss_stochastic.append(temp_loss)
+        
+
+# Batch Training:
+# Re-initialize graph
+ops.reset_default_graph()
+sess = tf.Session()
+
+# Declare batch size
+batch_size = 20
+
+# Create data
+x_vals = np.random.normal(1, 0.1, 100)
+y_vals = np.repeat(10., 100)
+x_data = tf.placeholder(shape=[None, 1], dtype=tf.float32)
+y_target = tf.placeholder(shape=[None, 1], dtype=tf.float32)
+
+# Create variable (one model parameter = A)
+A = tf.Variable(tf.random_normal(shape=[1,1]))
+
+# Add operation to graph
+my_output = tf.matmul(x_data, A)
+
+# Add L2 loss operation to graph
+loss = tf.reduce_mean(tf.square(my_output - y_target))
+
+# Initialize variables
+init = tf.global_variables_initializer()
+sess.run(init)
+
+# Create Optimizer
+my_opt = tf.train.GradientDescentOptimizer(0.02)
+train_step = my_opt.minimize(loss)
+
+loss_batch = []
+# Run Loop
+for i in range(100):
+    rand_index = np.random.choice(100, size=batch_size)
+    rand_x = np.transpose([x_vals[rand_index]])
+    rand_y = np.transpose([y_vals[rand_index]])
+    sess.run(train_step, feed_dict={x_data: rand_x, y_target: rand_y})
+    if (i+1)%5==0:
+        print('Step #' + str(i+1) + ' A = ' + str(sess.run(A)))
+        temp_loss = sess.run(loss, feed_dict={x_data: rand_x, y_target: rand_y})
+        print('Loss = ' + str(temp_loss))
+        loss_batch.append(temp_loss)
+        
+plt.plot(range(0, 100, 5), loss_stochastic, 'b-', label='Stochastic Loss')
+plt.plot(range(0, 100, 5), loss_batch, 'r--', label='Batch Loss, size=20')
+plt.legend(loc='upper right', prop={'size': 11})
+plt.show()
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Combining Everything Together
+#----------------------------------
+# This file will perform binary classification on the
+# iris dataset. We will only predict if a flower is
+# I.setosa or not.
+#
+# We will create a simple binary classifier by creating a line
+# and running everything through a sigmoid to get a binary predictor.
+# The two features we will use are pedal length and pedal width.
+#
+# We will use batch training, but this can be easily
+# adapted to stochastic training.
+
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn import datasets
+import tensorflow as tf
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Load the iris data
+# iris.target = {0, 1, 2}, where '0' is setosa
+# iris.data ~ [sepal.width, sepal.length, pedal.width, pedal.length]
+iris = datasets.load_iris()
+binary_target = np.array([1. if x==0 else 0. for x in iris.target])
+iris_2d = np.array([[x[2], x[3]] for x in iris.data])
+
+# Declare batch size
+batch_size = 20
+
+# Create graph
+sess = tf.Session()
+
+# Declare placeholders
+x1_data = tf.placeholder(shape=[None, 1], dtype=tf.float32)
+x2_data = tf.placeholder(shape=[None, 1], dtype=tf.float32)
+y_target = tf.placeholder(shape=[None, 1], dtype=tf.float32)
+
+# Create variables A and b (0 = x1 - A*x2 + b)
+A = tf.Variable(tf.random_normal(shape=[1, 1]))
+b = tf.Variable(tf.random_normal(shape=[1, 1]))
+
+# Add model to graph:
+# x1 - A*x2 + b
+my_mult = tf.matmul(x2_data, A)
+my_add = tf.add(my_mult, b)
+my_output = tf.subtract(x1_data, my_add)
+
+# Add classification loss (cross entropy)
+xentropy = tf.nn.sigmoid_cross_entropy_with_logits(logits=my_output, labels=y_target)
+
+# Create Optimizer
+my_opt = tf.train.GradientDescentOptimizer(0.05)
+train_step = my_opt.minimize(xentropy)
+
+# Initialize variables
+init = tf.global_variables_initializer()
+sess.run(init)
+
+# Run Loop
+for i in range(1000):
+    rand_index = np.random.choice(len(iris_2d), size=batch_size)
+    #rand_x = np.transpose([iris_2d[rand_index]])
+    rand_x = iris_2d[rand_index]
+    rand_x1 = np.array([[x[0]] for x in rand_x])
+    rand_x2 = np.array([[x[1]] for x in rand_x])
+    #rand_y = np.transpose([binary_target[rand_index]])
+    rand_y = np.array([[y] for y in binary_target[rand_index]])
+    sess.run(train_step, feed_dict={x1_data: rand_x1, x2_data: rand_x2, y_target: rand_y})
+    if (i+1)%200==0:
+        print('Step #' + str(i+1) + ' A = ' + str(sess.run(A)) + ', b = ' + str(sess.run(b)))
+        
+
+# Visualize Results
+# Pull out slope/intercept
+[[slope]] = sess.run(A)
+[[intercept]] = sess.run(b)
+
+# Create fitted line
+x = np.linspace(0, 3, num=50)
+ablineValues = []
+for i in x:
+  ablineValues.append(slope*i+intercept)
+
+# Plot the fitted line over the data
+setosa_x = [a[1] for i,a in enumerate(iris_2d) if binary_target[i]==1]
+setosa_y = [a[0] for i,a in enumerate(iris_2d) if binary_target[i]==1]
+non_setosa_x = [a[1] for i,a in enumerate(iris_2d) if binary_target[i]==0]
+non_setosa_y = [a[0] for i,a in enumerate(iris_2d) if binary_target[i]==0]
+plt.plot(setosa_x, setosa_y, 'rx', ms=10, mew=2, label='setosa')
+plt.plot(non_setosa_x, non_setosa_y, 'ro', label='Non-setosa')
+plt.plot(x, ablineValues, 'b-')
+plt.xlim([0.0, 2.7])
+plt.ylim([0.0, 7.1])
+plt.suptitle('Linear Separator For I.setosa', fontsize=20)
+plt.xlabel('Petal Length')
+plt.ylabel('Petal Width')
+plt.legend(loc='lower right')
+plt.show()
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

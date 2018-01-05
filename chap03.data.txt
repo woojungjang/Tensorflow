@@ -1,0 +1,866 @@
+# chap_03_01_Linear_Regression.py
+# 역행렬기법 사용
+# Linear Regression: Inverse Matrix Method(쿡북112쪽)
+#----------------------------------
+#
+# This function shows how to use TensorFlow to
+# solve linear regression via the matrix inverse.
+#
+# Given Ax=b, solving for x:
+#  x = (t(A) * A)^(-1) * t(A) * b
+#  where t(A) is the transpose of A
+
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Create graph
+sess = tf.Session()
+
+# Create the data
+x_vals = np.linspace(0, 10, 100) #0과 10을 끝점으로 100개의 등간격 데이터
+y_vals = x_vals + np.random.normal(0, 1, 100)
+
+# Create design matrix
+x_vals_column = np.transpose(np.matrix(x_vals)) #shape(100,1)
+ones_column = np.transpose(np.matrix(np.repeat(1, 100))) #shape(100,1)
+
+#각 열에 x_vals 값과 숫자 1이 들어 있는 행렬
+# A의 shape() => (100,2)
+A = np.column_stack((x_vals_column, ones_column))
+                        #(100,1)      (100,1)
+
+# Create b matrix
+b = np.transpose(np.matrix(y_vals))
+
+# Create tensors
+A_tensor = tf.constant(A) #shape(100,2)
+b_tensor = tf.constant(b) #shape(100,1)
+
+# Matrix inverse solution
+# (2,100) * (100,2) => (2,2)
+tA_A = tf.matmul(tf.transpose(A_tensor), A_tensor) #식1 
+#(2,2)
+tA_A_inv = tf.matrix_inverse(tA_A) #식2
+# (2,100)
+product = tf.matmul(tA_A_inv, tf.transpose(A_tensor)) #식3
+# (2,100)*(100,1) => (2,1)
+
+solution = tf.matmul(product, b_tensor) #식4
+			#(1,2)*(100,1)
+solution_eval = sess.run(solution)
+
+# Extract coefficients
+slope = solution_eval[0][0] #기울기
+y_intercept = solution_eval[1][0] #편향
+
+print('slope: ' + str(slope))
+print('y_intercept: ' + str(y_intercept))
+
+# Get best fit line
+best_fit = [] # 직선을 그리기 위한 점정보를 저장하는 리스트
+for i in x_vals:
+  best_fit.append(slope*i+y_intercept)
+
+# Plot the results
+plt.plot(x_vals, y_vals, 'o', label='Data')
+plt.plot(x_vals, best_fit, 'r-', label='Best fit line', linewidth=3)
+plt.legend(loc='upper left')
+plt.show()
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# chap_03_02_Decomposition.py
+# 행렬분해기법사용
+# 덩치가 큰 행렬은 역행렬 기법으로 무리라 행렬을 분해하는기법으로 해결
+# 그 중 한가지방법이 숄레스키분해기법
+# Linear Regression: Decomposition Method
+#----------------------------------
+#
+# This function shows how to use TensorFlow to
+# solve linear regression via the matrix inverse.
+#
+# Given Ax=b, and a Cholesky decomposition such that
+#  A = L*L' then we can get solve for x via
+# 1) L*y=t(A)*b
+# 2) L'*x=y
+
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Create graph
+sess = tf.Session()
+
+# Create the data
+x_vals = np.linspace(0, 10, 100)
+y_vals = x_vals + np.random.normal(0, 1, 100)
+
+# Create design matrix
+x_vals_column = np.transpose(np.matrix(x_vals))
+ones_column = np.transpose(np.matrix(np.repeat(1, 100)))
+A = np.column_stack((x_vals_column, ones_column))
+
+# Create b matrix
+b = np.transpose(np.matrix(y_vals))
+
+# Create tensors
+A_tensor = tf.constant(A)
+b_tensor = tf.constant(b)
+
+# Find Cholesky Decomposition
+tA_A = tf.matmul(tf.transpose(A_tensor), A_tensor)
+L = tf.cholesky(tA_A)
+#cholesky함수는 하삼각 행렬을 반환해준다.
+#L: 하삼각행렬
+
+# Solve L*y=t(A)*b
+tA_b = tf.matmul(tf.transpose(A_tensor), b)
+sol1 = tf.matrix_solve(L, tA_b)
+
+# Solve L' * y = sol1
+sol2 = tf.matrix_solve(tf.transpose(L), sol1)
+		      #tf.transpose(L): 상삼각행렬
+solution_eval = sess.run(sol2)
+
+# Extract coefficients
+slope = solution_eval[0][0]
+y_intercept = solution_eval[1][0]
+
+print('slope: ' + str(slope))
+print('y_intercept: ' + str(y_intercept))
+
+# Get best fit line
+best_fit = []
+for i in x_vals:
+  best_fit.append(slope*i+y_intercept)
+
+# Plot the results
+plt.plot(x_vals, y_vals, 'o', label='Data')
+plt.plot(x_vals, best_fit, 'r-', label='Best fit line', linewidth=3)
+plt.legend(loc='upper left')
+plt.show()
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# chap_03_03_Linear_TensorFlow_Way.py
+# Linear Regression: TensorFlow Way(쿡북118쪽)
+#----------------------------------
+#
+# This function shows how to use TensorFlow to
+# solve linear regression.
+# y = Ax + b
+#
+# We will use the iris data, specifically:
+#  y = Sepal Length
+#  x = Petal Width
+
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+from sklearn import datasets
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Create graph
+sess = tf.Session()
+
+# Load the data
+# iris.data = [(Sepal Length, Sepal Width, Petal Length, Petal Width)]
+iris = datasets.load_iris()
+x_vals = np.array([x[3] for x in iris.data]) #꽃잎의너비(Petal Width)
+y_vals = np.array([y[0] for y in iris.data]) #꽃받침의 길이(Sepal Length)
+
+# Declare batch size
+batch_size = 25
+
+# Initialize placeholders
+x_data = tf.placeholder(shape=[None, 1], dtype=tf.float32)
+y_target = tf.placeholder(shape=[None, 1], dtype=tf.float32)
+
+# Create variables for linear regression
+A = tf.Variable(tf.random_normal(shape=[1,1]))
+b = tf.Variable(tf.random_normal(shape=[1,1]))
+
+# Declare model operations
+model_output = tf.add(tf.matmul(x_data, A), b)
+
+# Declare loss function (L2 loss)
+loss = tf.reduce_mean(tf.square(y_target - model_output))
+
+# Declare optimizer
+my_opt = tf.train.GradientDescentOptimizer(0.05)
+train_step = my_opt.minimize(loss)
+
+# Initialize variables
+init = tf.global_variables_initializer()
+sess.run(init)
+
+# Training loop
+loss_vec = [] #비용함수 저장할 리스트
+for i in range(100):
+    rand_index = np.random.choice(len(x_vals), size=batch_size) 
+    rand_x = np.transpose([x_vals[rand_index]]) # shape(25, 1)
+    rand_y = np.transpose([y_vals[rand_index]]) # shape(25, 1)
+    sess.run(train_step, feed_dict={x_data: rand_x, y_target: rand_y})
+    temp_loss = sess.run(loss, feed_dict={x_data: rand_x, y_target: rand_y})
+    loss_vec.append(temp_loss)
+    if (i+1)%25==0:
+        print('Step #' + str(i+1) + ' A = ' + str(sess.run(A)) + ' b = ' + str(sess.run(b)))
+        print('Loss = ' + str(temp_loss)) # 비용 함수들을 리스트에 저장
+
+# Get the optimal coefficients
+[slope] = sess.run(A) # 기울기
+[y_intercept] = sess.run(b) # y 절편
+
+# Get best fit line
+best_fit = [] # 그래프로 그릴 최적의 직선 정보 리스트
+for i in x_vals:
+  best_fit.append(slope*i+y_intercept)
+
+# Plot the result
+# 꽃잎의 너비(x)와 꽃받침 길이(y)를 점 그래프로 그리기
+plt.plot(x_vals, y_vals, 'o', label='Data Points')
+
+# 꽃잎의 너비에 따른 최적화된 직선 그리기
+plt.plot(x_vals, best_fit, 'r-', label='Best fit line', linewidth=3)
+plt.legend(loc='upper left')
+plt.title('Sepal Length vs Petal Width')
+plt.xlabel('Petal Width')
+plt.ylabel('Sepal Length')
+plt.show()
+
+# Plot loss over time
+plt.plot(loss_vec, 'k-')
+plt.title('L2 Loss per Generation')
+plt.xlabel('Generation')
+plt.ylabel('L2 Loss')
+plt.show()
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Linear Regression: L1 vs L2
+#----------------------------------
+#
+# This function shows how to use TensorFlow to
+# solve linear regression via the matrix inverse.
+
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+from sklearn import datasets
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Create graph
+sess = tf.Session()
+
+# Load the data
+# iris.data = [(Sepal Length, Sepal Width, Petal Length, Petal Width)]
+iris = datasets.load_iris()
+x_vals = np.array([x[3] for x in iris.data])
+y_vals = np.array([y[0] for y in iris.data])
+
+# Declare batch size and number of iterations
+batch_size = 25
+learning_rate = 0.4 # Will not converge with learning rate at 0.4
+iterations = 50
+
+# Initialize placeholders
+x_data = tf.placeholder(shape=[None, 1], dtype=tf.float32)
+y_target = tf.placeholder(shape=[None, 1], dtype=tf.float32)
+
+# Create variables for linear regression
+A = tf.Variable(tf.random_normal(shape=[1,1]))
+b = tf.Variable(tf.random_normal(shape=[1,1]))
+
+# Declare model operations
+model_output = tf.add(tf.matmul(x_data, A), b)
+
+# Declare loss functions
+loss_l1 = tf.reduce_mean(tf.abs(y_target - model_output))
+
+# Declare optimizers
+my_opt_l1 = tf.train.GradientDescentOptimizer(learning_rate)
+train_step_l1 = my_opt_l1.minimize(loss_l1)
+
+# Initialize variables
+init = tf.global_variables_initializer()
+sess.run(init)
+
+# Training loop
+loss_vec_l1 = []
+for i in range(iterations):
+    rand_index = np.random.choice(len(x_vals), size=batch_size)
+    rand_x = np.transpose([x_vals[rand_index]])
+    rand_y = np.transpose([y_vals[rand_index]])
+    sess.run(train_step_l1, feed_dict={x_data: rand_x, y_target: rand_y})
+    temp_loss_l1 = sess.run(loss_l1, feed_dict={x_data: rand_x, y_target: rand_y})
+    loss_vec_l1.append(temp_loss_l1)
+    if (i+1)%25==0:
+        print('Step #' + str(i+1) + ' A = ' + str(sess.run(A)) + ' b = ' + str(sess.run(b)))
+
+
+# L2 Loss
+# Reinitialize graph
+ops.reset_default_graph()
+
+# Create graph
+sess = tf.Session()
+
+# Initialize placeholders
+x_data = tf.placeholder(shape=[None, 1], dtype=tf.float32)
+y_target = tf.placeholder(shape=[None, 1], dtype=tf.float32)
+
+# Create variables for linear regression
+A = tf.Variable(tf.random_normal(shape=[1,1]))
+b = tf.Variable(tf.random_normal(shape=[1,1]))
+
+# Declare model operations
+model_output = tf.add(tf.matmul(x_data, A), b)
+
+# Declare loss functions
+loss_l2 = tf.reduce_mean(tf.square(y_target - model_output))
+
+# Declare optimizers
+my_opt_l2 = tf.train.GradientDescentOptimizer(learning_rate)
+train_step_l2 = my_opt_l2.minimize(loss_l2)
+
+# Initialize variables
+init = tf.global_variables_initializer()
+sess.run(init)
+
+loss_vec_l2 = []
+for i in range(iterations):
+    rand_index = np.random.choice(len(x_vals), size=batch_size)
+    rand_x = np.transpose([x_vals[rand_index]])
+    rand_y = np.transpose([y_vals[rand_index]])
+    sess.run(train_step_l2, feed_dict={x_data: rand_x, y_target: rand_y})
+    temp_loss_l2 = sess.run(loss_l2, feed_dict={x_data: rand_x, y_target: rand_y})
+    loss_vec_l2.append(temp_loss_l2)
+    if (i+1)%25==0:
+        print('Step #' + str(i+1) + ' A = ' + str(sess.run(A)) + ' b = ' + str(sess.run(b)))
+
+
+# Plot loss over time
+plt.plot(loss_vec_l1, 'k-', label='L1 Loss')
+plt.plot(loss_vec_l2, 'r--', label='L2 Loss')
+plt.title('L1 and L2 Loss per Generation')
+plt.xlabel('Generation')
+plt.ylabel('L1 Loss')
+plt.legend(loc='upper right')
+plt.show()
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Deming Regression
+#----------------------------------
+#
+# This function shows how to use TensorFlow to
+# solve linear Deming regression.
+# y = Ax + b
+#
+# We will use the iris data, specifically:
+#  y = Sepal Length
+#  x = Petal Width
+
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+from sklearn import datasets
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Create graph
+sess = tf.Session()
+
+# Load the data
+# iris.data = [(Sepal Length, Sepal Width, Petal Length, Petal Width)]
+iris = datasets.load_iris()
+x_vals = np.array([x[3] for x in iris.data])
+y_vals = np.array([y[0] for y in iris.data])
+
+# Declare batch size
+batch_size = 50
+
+# Initialize placeholders
+x_data = tf.placeholder(shape=[None, 1], dtype=tf.float32)
+y_target = tf.placeholder(shape=[None, 1], dtype=tf.float32)
+
+# Create variables for linear regression
+A = tf.Variable(tf.random_normal(shape=[1,1]))
+b = tf.Variable(tf.random_normal(shape=[1,1]))
+
+# Declare model operations
+model_output = tf.add(tf.matmul(x_data, A), b)
+
+# Declare Demming loss function
+demming_numerator = tf.abs(tf.subtract(y_target, tf.add(tf.matmul(x_data, A), b)))
+demming_denominator = tf.sqrt(tf.add(tf.square(A),1))
+loss = tf.reduce_mean(tf.truediv(demming_numerator, demming_denominator))
+
+# Declare optimizer
+my_opt = tf.train.GradientDescentOptimizer(0.005)
+train_step = my_opt.minimize(loss)
+
+# Initialize variables
+init = tf.global_variables_initializer()
+sess.run(init)
+
+# Training loop
+loss_vec = []
+for i in range(500):
+    rand_index = np.random.choice(len(x_vals), size=batch_size)
+    rand_x = np.transpose([x_vals[rand_index]])
+    rand_y = np.transpose([y_vals[rand_index]])
+    sess.run(train_step, feed_dict={x_data: rand_x, y_target: rand_y})
+    temp_loss = sess.run(loss, feed_dict={x_data: rand_x, y_target: rand_y})
+    loss_vec.append(temp_loss)
+    if (i+1)%50==0:
+        print('Step #' + str(i+1) + ' A = ' + str(sess.run(A)) + ' b = ' + str(sess.run(b)))
+        print('Loss = ' + str(temp_loss))
+
+# Get the optimal coefficients
+[slope] = sess.run(A)
+[y_intercept] = sess.run(b)
+
+# Get best fit line
+best_fit = []
+for i in x_vals:
+  best_fit.append(slope*i+y_intercept)
+
+# Plot the result
+plt.plot(x_vals, y_vals, 'o', label='Data Points')
+plt.plot(x_vals, best_fit, 'r-', label='Best fit line', linewidth=3)
+plt.legend(loc='upper left')
+plt.title('Sepal Length vs Petal Width')
+plt.xlabel('Petal Width')
+plt.ylabel('Sepal Length')
+plt.show()
+
+# Plot loss over time
+plt.plot(loss_vec, 'k-')
+plt.title('L2 Loss per Generation')
+plt.xlabel('Generation')
+plt.ylabel('L2 Loss')
+plt.show()
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# LASSO and Ridge Regression
+# 
+# This function shows how to use TensorFlow to solve LASSO or 
+# Ridge regression for 
+# y = Ax + b
+# 
+# We will use the iris data, specifically: 
+#   y = Sepal Length 
+#   x = Petal Width
+
+# import required libraries
+import matplotlib.pyplot as plt
+import sys
+import numpy as np
+import tensorflow as tf
+from sklearn import datasets
+from tensorflow.python.framework import ops
+
+
+# Specify 'Ridge' or 'LASSO'
+regression_type = 'LASSO'
+
+# clear out old graph
+ops.reset_default_graph()
+
+# Create graph
+sess = tf.Session()
+
+###
+# Load iris data
+###
+
+# iris.data = [(Sepal Length, Sepal Width, Petal Length, Petal Width)]
+iris = datasets.load_iris()
+x_vals = np.array([x[3] for x in iris.data])
+y_vals = np.array([y[0] for y in iris.data])
+
+###
+# Model Parameters
+###
+
+# Declare batch size
+batch_size = 50
+
+# Initialize placeholders
+x_data = tf.placeholder(shape=[None, 1], dtype=tf.float32)
+y_target = tf.placeholder(shape=[None, 1], dtype=tf.float32)
+
+# make results reproducible
+seed = 13
+np.random.seed(seed)
+tf.set_random_seed(seed)
+
+# Create variables for linear regression
+A = tf.Variable(tf.random_normal(shape=[1,1]))
+b = tf.Variable(tf.random_normal(shape=[1,1]))
+
+# Declare model operations
+model_output = tf.add(tf.matmul(x_data, A), b)
+
+###
+# Loss Functions
+###
+
+# Select appropriate loss function based on regression type
+
+if regression_type == 'LASSO':
+    # Declare Lasso loss function
+    # Lasso Loss = L2_Loss + heavyside_step,
+    # Where heavyside_step ~ 0 if A < constant, otherwise ~ 99
+    lasso_param = tf.constant(0.9)
+    heavyside_step = tf.truediv(1., tf.add(1., tf.exp(tf.multiply(-50., tf.subtract(A, lasso_param)))))
+    regularization_param = tf.multiply(heavyside_step, 99.)
+    loss = tf.add(tf.reduce_mean(tf.square(y_target - model_output)), regularization_param)
+
+elif regression_type == 'Ridge':
+    # Declare the Ridge loss function
+    # Ridge loss = L2_loss + L2 norm of slope
+    ridge_param = tf.constant(1.)
+    ridge_loss = tf.reduce_mean(tf.square(A))
+    loss = tf.expand_dims(tf.add(tf.reduce_mean(tf.square(y_target - model_output)), tf.multiply(ridge_param, ridge_loss)), 0)
+    
+else:
+    print('Invalid regression_type parameter value',file=sys.stderr)
+
+
+###
+# Optimizer
+###
+
+# Declare optimizer
+my_opt = tf.train.GradientDescentOptimizer(0.001)
+train_step = my_opt.minimize(loss)
+
+###
+# Run regression
+###
+
+# Initialize variables
+init = tf.global_variables_initializer()
+sess.run(init)
+
+# Training loop
+loss_vec = []
+for i in range(1500):
+    rand_index = np.random.choice(len(x_vals), size=batch_size)
+    rand_x = np.transpose([x_vals[rand_index]])
+    rand_y = np.transpose([y_vals[rand_index]])
+    sess.run(train_step, feed_dict={x_data: rand_x, y_target: rand_y})
+    temp_loss = sess.run(loss, feed_dict={x_data: rand_x, y_target: rand_y})
+    loss_vec.append(temp_loss[0])
+    if (i+1)%300==0:
+        print('Step #' + str(i+1) + ' A = ' + str(sess.run(A)) + ' b = ' + str(sess.run(b)))
+        print('Loss = ' + str(temp_loss))
+        print('\n')
+
+###
+# Extract regression results
+###
+
+# Get the optimal coefficients
+[slope] = sess.run(A)
+[y_intercept] = sess.run(b)
+
+# Get best fit line
+best_fit = []
+for i in x_vals:
+  best_fit.append(slope*i+y_intercept)
+
+
+###
+# Plot results
+###
+
+# Plot regression line against data points
+plt.plot(x_vals, y_vals, 'o', label='Data Points')
+plt.plot(x_vals, best_fit, 'r-', label='Best fit line', linewidth=3)
+plt.legend(loc='upper left')
+plt.title('Sepal Length vs Petal Width')
+plt.xlabel('Petal Width')
+plt.ylabel('Sepal Length')
+plt.show()
+
+# Plot loss over time
+plt.plot(loss_vec, 'k-')
+plt.title(regression_type + ' Loss per Generation')
+plt.xlabel('Generation')
+plt.ylabel('Loss')
+plt.show()
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Elastic Net Regression
+#----------------------------------
+#
+# This function shows how to use TensorFlow to
+# solve elastic net regression.
+# y = Ax + b
+#
+# We will use the iris data, specifically:
+#  y = Sepal Length
+#  x = Pedal Length, Petal Width, Sepal Width
+
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+from sklearn import datasets
+from tensorflow.python.framework import ops
+
+###
+# Set up for TensorFlow
+###
+
+ops.reset_default_graph()
+
+# Create graph
+sess = tf.Session()
+
+###
+# Obtain data
+###
+
+# Load the data
+# iris.data = [(Sepal Length, Sepal Width, Petal Length, Petal Width)]
+iris = datasets.load_iris()
+x_vals = np.array([[x[1], x[2], x[3]] for x in iris.data])
+y_vals = np.array([y[0] for y in iris.data])
+
+###
+# Setup model
+###
+
+# make results reproducible
+seed = 1
+np.random.seed(seed)
+tf.set_random_seed(seed)
+
+# Declare batch size
+batch_size = 50
+
+# Initialize placeholders
+x_data = tf.placeholder(shape=[None, 3], dtype=tf.float32)
+y_target = tf.placeholder(shape=[None, 1], dtype=tf.float32)
+
+# Create variables for linear regression
+A = tf.Variable(tf.random_normal(shape=[3,1]))
+b = tf.Variable(tf.random_normal(shape=[1,1]))
+
+# Declare model operations
+model_output = tf.add(tf.matmul(x_data, A), b)
+
+# Declare the elastic net loss function
+elastic_param1 = tf.constant(1.)
+elastic_param2 = tf.constant(1.)
+l1_a_loss = tf.reduce_mean(tf.abs(A))
+l2_a_loss = tf.reduce_mean(tf.square(A))
+e1_term = tf.multiply(elastic_param1, l1_a_loss)
+e2_term = tf.multiply(elastic_param2, l2_a_loss)
+loss = tf.expand_dims(tf.add(tf.add(tf.reduce_mean(tf.square(y_target - model_output)), e1_term), e2_term), 0)
+
+# Declare optimizer
+my_opt = tf.train.GradientDescentOptimizer(0.001)
+train_step = my_opt.minimize(loss)
+
+###
+# Train model
+###
+
+# Initialize variables
+init = tf.global_variables_initializer()
+sess.run(init)
+
+# Training loop
+loss_vec = []
+for i in range(1000):
+    rand_index = np.random.choice(len(x_vals), size=batch_size)
+    rand_x = x_vals[rand_index]
+    rand_y = np.transpose([y_vals[rand_index]])
+    sess.run(train_step, feed_dict={x_data: rand_x, y_target: rand_y})
+    temp_loss = sess.run(loss, feed_dict={x_data: rand_x, y_target: rand_y})
+    loss_vec.append(temp_loss[0])
+    if (i+1)%250==0:
+        print('Step #' + str(i+1) + ' A = ' + str(sess.run(A)) + ' b = ' + str(sess.run(b)))
+        print('Loss = ' + str(temp_loss))
+
+###
+# Extract model results
+###
+
+# Get the optimal coefficients
+[[sw_coef], [pl_coef], [pw_ceof]] = sess.run(A)
+[y_intercept] = sess.run(b)
+
+###
+# Plot results
+###
+
+# Plot loss over time
+plt.plot(loss_vec, 'k-')
+plt.title('Loss per Generation')
+plt.xlabel('Generation')
+plt.ylabel('Loss')
+plt.show()
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Logistic Regression
+#----------------------------------
+#
+# This function shows how to use TensorFlow to
+# solve logistic regression.
+# y = sigmoid(Ax + b)
+#
+# We will use the low birth weight data, specifically:
+#  y = 0 or 1 = low birth weight
+#  x = demographic and medical history data
+
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+import requests
+from tensorflow.python.framework import ops
+import os.path
+import csv
+
+
+ops.reset_default_graph()
+
+# Create graph
+sess = tf.Session()
+
+###
+# Obtain and prepare data for modeling
+###
+
+# name of data file
+birth_weight_file = 'birth_weight.csv'
+
+# download data and create data file if file does not exist in current directory
+if not os.path.exists(birth_weight_file):
+    birthdata_url = 'https://github.com/nfmcclure/tensorflow_cookbook/raw/master/01_Introduction/07_Working_with_Data_Sources/birthweight_data/birthweight.dat'
+    birth_file = requests.get(birthdata_url)
+    birth_data = birth_file.text.split('\r\n')
+    birth_header = birth_data[0].split('\t')
+    birth_data = [[float(x) for x in y.split('\t') if len(x)>=1] for y in birth_data[1:] if len(y)>=1]
+    with open(birth_weight_file, "w") as f:
+        writer = csv.writer(f)
+        writer.writerow(birth_header)
+        writer.writerows(birth_data)
+        f.close()
+
+# read birth weight data into memory
+birth_data = []
+with open(birth_weight_file, newline='') as csvfile:
+     csv_reader = csv.reader(csvfile)
+     birth_header = next(csv_reader)
+     for row in csv_reader:
+         birth_data.append(row)
+
+birth_data = [[float(x) for x in row] for row in birth_data]
+
+# Pull out target variable
+y_vals = np.array([x[0] for x in birth_data])
+# Pull out predictor variables (not id, not target, and not birthweight)
+x_vals = np.array([x[1:8] for x in birth_data])
+
+# set for reproducible results
+seed = 99
+np.random.seed(seed)
+tf.set_random_seed(seed)
+
+# Split data into train/test = 80%/20%
+train_indices = np.random.choice(len(x_vals), round(len(x_vals)*0.8), replace=False)
+test_indices = np.array(list(set(range(len(x_vals))) - set(train_indices)))
+x_vals_train = x_vals[train_indices]
+x_vals_test = x_vals[test_indices]
+y_vals_train = y_vals[train_indices]
+y_vals_test = y_vals[test_indices]
+
+# Normalize by column (min-max norm)
+def normalize_cols(m):
+    col_max = m.max(axis=0)
+    col_min = m.min(axis=0)
+    return (m-col_min) / (col_max - col_min)
+    
+x_vals_train = np.nan_to_num(normalize_cols(x_vals_train))
+x_vals_test = np.nan_to_num(normalize_cols(x_vals_test))
+
+###
+# Define Tensorflow computational graph¶
+###
+
+# Declare batch size
+batch_size = 25
+
+# Initialize placeholders
+x_data = tf.placeholder(shape=[None, 7], dtype=tf.float32)
+y_target = tf.placeholder(shape=[None, 1], dtype=tf.float32)
+
+# Create variables for linear regression
+A = tf.Variable(tf.random_normal(shape=[7,1]))
+b = tf.Variable(tf.random_normal(shape=[1,1]))
+
+# Declare model operations
+model_output = tf.add(tf.matmul(x_data, A), b)
+
+# Declare loss function (Cross Entropy loss)
+loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=model_output, labels=y_target))
+
+# Declare optimizer
+my_opt = tf.train.GradientDescentOptimizer(0.01)
+train_step = my_opt.minimize(loss)
+
+###
+# Train model
+###
+
+# Initialize variables
+init = tf.global_variables_initializer()
+sess.run(init)
+
+# Actual Prediction
+prediction = tf.round(tf.sigmoid(model_output))
+predictions_correct = tf.cast(tf.equal(prediction, y_target), tf.float32)
+accuracy = tf.reduce_mean(predictions_correct)
+
+# Training loop
+loss_vec = []
+train_acc = []
+test_acc = []
+for i in range(1500):
+    rand_index = np.random.choice(len(x_vals_train), size=batch_size)
+    rand_x = x_vals_train[rand_index]
+    rand_y = np.transpose([y_vals_train[rand_index]])
+    sess.run(train_step, feed_dict={x_data: rand_x, y_target: rand_y})
+
+    temp_loss = sess.run(loss, feed_dict={x_data: rand_x, y_target: rand_y})
+    loss_vec.append(temp_loss)
+    temp_acc_train = sess.run(accuracy, feed_dict={x_data: x_vals_train, y_target: np.transpose([y_vals_train])})
+    train_acc.append(temp_acc_train)
+    temp_acc_test = sess.run(accuracy, feed_dict={x_data: x_vals_test, y_target: np.transpose([y_vals_test])})
+    test_acc.append(temp_acc_test)
+    if (i+1)%300==0:
+        print('Loss = ' + str(temp_loss))
+        
+
+###
+# Display model performance
+###
+
+# Plot loss over time
+plt.plot(loss_vec, 'k-')
+plt.title('Cross Entropy Loss per Generation')
+plt.xlabel('Generation')
+plt.ylabel('Cross Entropy Loss')
+plt.show()
+
+# Plot train and test accuracy
+plt.plot(train_acc, 'k-', label='Train Set Accuracy')
+plt.plot(test_acc, 'r--', label='Test Set Accuracy')
+plt.title('Train and Test Accuracy')
+plt.xlabel('Generation')
+plt.ylabel('Accuracy')
+plt.legend(loc='lower right')
+plt.show()
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

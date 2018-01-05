@@ -1,0 +1,754 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# -*- coding: utf-8 -*-
+# Implementing Unit Tests
+#----------------------------------
+#
+# Here, we will show how to implement different unit tests
+#  on the MNIST example
+
+import numpy as np
+import tensorflow as tf
+from tensorflow.contrib.learn.python.learn.datasets.mnist import read_data_sets
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Start a graph session
+sess = tf.Session()
+
+# Load data
+data_dir = 'temp'
+mnist = read_data_sets(data_dir)
+
+# Convert images into 28x28 (they are downloaded as 1x784)
+train_xdata = np.array([np.reshape(x, (28,28)) for x in mnist.train.images])
+test_xdata = np.array([np.reshape(x, (28,28)) for x in mnist.test.images])
+
+# Convert labels into one-hot encoded vectors
+train_labels = mnist.train.labels
+test_labels = mnist.test.labels
+
+# Set model parameters
+batch_size = 100
+learning_rate = 0.005
+evaluation_size = 100
+image_width = train_xdata[0].shape[0]
+image_height = train_xdata[0].shape[1]
+target_size = max(train_labels) + 1
+num_channels = 1 # greyscale = 1 channel
+generations = 100
+eval_every = 5
+conv1_features = 25
+conv2_features = 50
+max_pool_size1 = 2 # NxN window for 1st max pool layer
+max_pool_size2 = 2 # NxN window for 2nd max pool layer
+fully_connected_size1 = 100
+dropout_prob = 0.75
+
+# Declare model placeholders
+x_input_shape = (batch_size, image_width, image_height, num_channels)
+x_input = tf.placeholder(tf.float32, shape=x_input_shape)
+y_target = tf.placeholder(tf.int32, shape=(batch_size))
+eval_input_shape = (evaluation_size, image_width, image_height, num_channels)
+eval_input = tf.placeholder(tf.float32, shape=eval_input_shape)
+eval_target = tf.placeholder(tf.int32, shape=(evaluation_size))
+
+# Dropout placeholder
+dropout = tf.placeholder(tf.float32, shape=())
+
+# Declare model parameters
+conv1_weight = tf.Variable(tf.truncated_normal([4, 4, num_channels, conv1_features],
+                                               stddev=0.1, dtype=tf.float32))
+conv1_bias = tf.Variable(tf.zeros([conv1_features], dtype=tf.float32))
+
+conv2_weight = tf.Variable(tf.truncated_normal([4, 4, conv1_features, conv2_features],
+                                               stddev=0.1, dtype=tf.float32))
+conv2_bias = tf.Variable(tf.zeros([conv2_features], dtype=tf.float32))
+
+# fully connected variables
+resulting_width = image_width // (max_pool_size1 * max_pool_size2)
+resulting_height = image_height // (max_pool_size1 * max_pool_size2)
+full1_input_size = resulting_width * resulting_height * conv2_features
+full1_weight = tf.Variable(tf.truncated_normal([full1_input_size, fully_connected_size1],
+                          stddev=0.1, dtype=tf.float32))
+full1_bias = tf.Variable(tf.truncated_normal([fully_connected_size1], stddev=0.1, dtype=tf.float32))
+full2_weight = tf.Variable(tf.truncated_normal([fully_connected_size1, target_size],
+                                               stddev=0.1, dtype=tf.float32))
+full2_bias = tf.Variable(tf.truncated_normal([target_size], stddev=0.1, dtype=tf.float32))
+
+
+# Initialize Model Operations
+def my_conv_net(input_data):
+    # First Conv-ReLU-MaxPool Layer
+    conv1 = tf.nn.conv2d(input_data, conv1_weight, strides=[1, 1, 1, 1], padding='SAME')
+    relu1 = tf.nn.relu(tf.nn.bias_add(conv1, conv1_bias))
+    max_pool1 = tf.nn.max_pool(relu1, ksize=[1, max_pool_size1, max_pool_size1, 1],
+                               strides=[1, max_pool_size1, max_pool_size1, 1], padding='SAME')
+
+    # Second Conv-ReLU-MaxPool Layer
+    conv2 = tf.nn.conv2d(max_pool1, conv2_weight, strides=[1, 1, 1, 1], padding='SAME')
+    relu2 = tf.nn.relu(tf.nn.bias_add(conv2, conv2_bias))
+    max_pool2 = tf.nn.max_pool(relu2, ksize=[1, max_pool_size2, max_pool_size2, 1],
+                               strides=[1, max_pool_size2, max_pool_size2, 1], padding='SAME')
+
+    # Transform Output into a 1xN layer for next fully connected layer
+    final_conv_shape = max_pool2.get_shape().as_list()
+    final_shape = final_conv_shape[1] * final_conv_shape[2] * final_conv_shape[3]
+    flat_output = tf.reshape(max_pool2, [final_conv_shape[0], final_shape])
+
+    # First Fully Connected Layer
+    fully_connected1 = tf.nn.relu(tf.add(tf.matmul(flat_output, full1_weight), full1_bias))
+
+    # Second Fully Connected Layer
+    final_model_output = tf.add(tf.matmul(fully_connected1, full2_weight), full2_bias)
+    
+    # Add dropout
+    final_model_output = tf.nn.dropout(final_model_output, dropout)
+    
+    return(final_model_output)
+
+model_output = my_conv_net(x_input)
+test_model_output = my_conv_net(eval_input)
+
+# Declare Loss Function (softmax cross entropy)
+loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=model_output, labels=y_target))
+
+# Create a prediction function
+prediction = tf.nn.softmax(model_output)
+test_prediction = tf.nn.softmax(test_model_output)
+
+# Create accuracy function
+def get_accuracy(logits, targets):
+    batch_predictions = np.argmax(logits, axis=1)
+    num_correct = np.sum(np.equal(batch_predictions, targets))
+    return(100. * num_correct/batch_predictions.shape[0])
+
+# Create an optimizer
+my_optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9)
+train_step = my_optimizer.minimize(loss)
+
+# Initialize Variables
+init = tf.global_variables_initializer()
+sess.run(init)
+
+# Check values of tensors!
+class drop_out_test(tf.test.TestCase):
+    # Make sure that we don't drop too much
+    def dropout_greaterthan(self):
+        with self.test_session():
+          self.assertGreater(dropout.eval(), 0.25)
+
+# Test accuracy function
+class accuracy_test(tf.test.TestCase):
+    # Make sure accuracy function behaves correctly
+    def accuracy_exact_test(self):
+        with self.test_session():
+            test_preds = [[0.9, 0.1],[0.01, 0.99]]
+            test_targets = [0, 1]
+            test_acc = get_accuracy(test_preds, test_targets)
+            self.assertEqual(test_acc.eval(), 100.)
+
+# Test tensorshape
+class shape_test(tf.test.TestCase):
+    # Make sure our model output is size [batch_size, num_classes]
+    def output_shape_test(self):
+        with self.test_session():
+            numpy_array = np.ones([batch_size, target_size])
+            self.assertShapeEqual(numpy_array, model_output)
+
+# Perform unit tests
+tf.test.main()
+
+# Start training loop
+train_loss = []
+train_acc = []
+test_acc = []
+for i in range(generations):
+    rand_index = np.random.choice(len(train_xdata), size=batch_size)
+    rand_x = train_xdata[rand_index]
+    rand_x = np.expand_dims(rand_x, 3)
+    rand_y = train_labels[rand_index]
+    train_dict = {x_input: rand_x, y_target: rand_y, dropout: dropout_prob}
+    
+    sess.run(train_step, feed_dict=train_dict)
+    temp_train_loss, temp_train_preds = sess.run([loss, prediction], feed_dict=train_dict)
+    temp_train_acc = get_accuracy(temp_train_preds, rand_y)
+    
+    if (i+1) % eval_every == 0:
+        eval_index = np.random.choice(len(test_xdata), size=evaluation_size)
+        eval_x = test_xdata[eval_index]
+        eval_x = np.expand_dims(eval_x, 3)
+        eval_y = test_labels[eval_index]
+        test_dict = {eval_input: eval_x, eval_target: eval_y, dropout: 1.0}
+        test_preds = sess.run(test_prediction, feed_dict=test_dict)
+        temp_test_acc = get_accuracy(test_preds, eval_y)
+        
+        # Record and print results
+        train_loss.append(temp_train_loss)
+        train_acc.append(temp_train_acc)
+        test_acc.append(temp_test_acc)
+        acc_and_loss = [(i+1), temp_train_loss, temp_train_acc, temp_test_acc]
+        acc_and_loss = [np.round(x,2) for x in acc_and_loss]
+        print('Generation # {}. Train Loss: {:.2f}. Train Acc (Test Acc): {:.2f} ({:.2f})'.format(*acc_and_loss))
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# -*- coding: utf-8 -*-
+# Using Multiple Devices
+#----------------------------------
+#
+# This function gives us the ways to use
+#  multiple devices (executors) in TensorFlow.
+
+import tensorflow as tf
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# To find out where placement occurs, set 'log_device_placement'
+sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
+
+a = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], shape=[2, 3], name='a')
+b = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], shape=[3, 2], name='b')
+c = tf.matmul(a, b)
+
+# Runs the op.
+print(sess.run(c))
+
+
+# If we load a graph and want device placement to be forgotten,
+#  we set a parameter in our session:
+config = tf.ConfigProto()
+config.allow_soft_placement = True
+sess_soft = tf.Session(config=config)
+
+# GPUs
+#---------------------------------
+# Note that the GPU must have a compute capability > 3.5 for TF to use.
+# http://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#compute-capability
+
+
+# Careful with GPU memory allocation, TF never releases it.  TF starts with almost
+# all of the GPU memory allocated.  We can slowly grow to that limit with an
+# option setting:
+
+config.gpu_options.allow_growth = True
+sess_grow = tf.Session(config=config)
+
+# Also, we can limit the size of GPU memory used, with the following option
+config.gpu_options.per_process_gpu_memory_fraction = 0.4
+sess_limited = tf.Session(config=config)
+
+
+# How to set placements on multiple devices.
+# Here, assume we have three devies CPU:0, GPU:0, and GPU:1
+if tf.test.is_built_with_cuda():
+    with tf.device('/cpu:0'):
+        a = tf.constant([1.0, 3.0, 5.0], shape=[1, 3])
+        b = tf.constant([2.0, 4.0, 6.0], shape=[3, 1])
+        
+        with tf.device('/gpu:1'):
+            c = tf.matmul(a,b)
+            c = tf.reshape(c, [-1])
+        
+        with tf.device('/gpu:2'):
+            d = tf.matmul(b,a)
+            flat_d = tf.reshape(d, [-1])
+        
+        combined = tf.multiply(c, flat_d)
+    print(sess.run(combined))
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# -*- coding: utf-8 -*-
+# Parallelizing TensorFlow
+#----------------------------------
+#
+# We will show how to use TensorFlow distributed
+
+import tensorflow as tf
+
+# We will setup a local cluster (on localhost)
+
+# Cluster for 2 local workers (tasks 0 and 1):
+cluster = tf.train.ClusterSpec({'local': ['localhost:2222', 'localhost:2223']})
+# Server definition:
+server = tf.train.Server(cluster, job_name="local", task_index=0)
+server = tf.train.Server(cluster, job_name="local", task_index=1)
+# Finish and add
+#server.join()
+
+# Have each worker do a task
+# Worker 0 : create matrices
+# Worker 1 : calculate sum of all elements
+mat_dim = 25
+matrix_list = {}
+
+with tf.device('/job:local/task:0'):
+    for i in range(0, 2):
+        m_label = 'm_{}'.format(i)
+        matrix_list[m_label] = tf.random_normal([mat_dim, mat_dim])
+
+# Have each worker calculate the Cholesky Decomposition
+sum_outs = {}
+with tf.device('/job:local/task:1'):
+    for i in range(0, 2):
+        A = matrix_list['m_{}'.format(i)]
+        sum_outs['m_{}'.format(i)] = tf.reduce_sum(A)
+
+    # Sum all the cholesky decompositions
+    summed_out = tf.add_n(list(sum_outs.values()))
+
+with tf.Session(server.target) as sess:
+    result = sess.run(summed_out)
+    print('Summed Values:{}'.format(result))
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# -*- coding: utf-8 -*-
+# Tips for TensorFlow to Production
+#----------------------------------
+#
+# Various Tips for Taking TensorFlow to Production
+
+############################################
+#
+# THIS SCRIPT IS NOT RUNNABLE.
+#  -it only contains tips for production code
+#
+############################################
+
+# Also you can clear the default graph from memory
+import tensorflow as tf
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Saving Models
+# File types created from saving:    
+# checkpoint file:  Holds info on where the most recent models are
+# events file:      Strictly for viewing graph in Tensorboard
+# pbtxt file:       Textual protobufs file (uncompressed), used for debugging
+# chkp file:        Holds data and model weights (large file)
+# meta chkp files:  Model Graph and Meta-data (learning rate and operations)
+
+
+# Saving data pipeline structures (vocabulary, )
+word_list = ['to', 'be', 'or', 'not', 'to', 'be']
+vocab_list = list(set(word_list))
+vocab2ix_dict = dict(zip(vocab_list, range(len(vocab_list))))
+ix2vocab_dict = {val:key for key,val in vocab2ix_dict.items()}
+
+# Save vocabulary
+import json
+with open('vocab2ix_dict.json', 'w') as file_conn:
+    json.dump(vocab2ix_dict, file_conn)
+
+# Load vocabulary
+with open('vocab2ix_dict.json', 'r') as file_conn:
+    vocab2ix_dict = json.load(file_conn)
+
+# After model declaration, add a saving operations
+saver = tf.train.Saver()
+# Then during training, save every so often, referencing the training generation
+for i in range(generations):
+    ...
+    if i%save_every == 0:
+        saver.save(sess, 'my_model', global_step=step)
+
+# Can also save only specific variables:
+saver = tf.train.Saver({"my_var": my_variable})
+
+
+# other options for saver are 'keep checkpoint_every_n_hours'
+#      also 'max_to_keep'= default 5.
+        
+# Be sure to name operations, and variables for easy loading for referencing later
+conv_weights = tf.Variable(tf.random_normal(), name='conv_weights')
+loss = tf.reduce_mean(... , name='loss')
+
+# Instead of tyring argparse and main(), TensorFlow provides an 'app' function
+#  to handle running and loading of arguments
+
+# At the beginning of the file, define the flags.
+tf.app.flags.DEFINE_string("worker_locations", "", "List of worker addresses.")
+tf.app.flags.DEFINE_float('learning_rate', 0.01, 'Initial learning rate.')
+tf.app.flags.DEFINE_integer('generations', 1000, 'Number of training generations.')
+tf.app.flags.DEFINE_boolean('run_unit_tests', False, 'If true, run tests.')
+
+# Need to define a 'main' function for the app to run
+def main(_):
+    worker_ips = FLAGS.worker_locations.split(",")
+    learning_rate = FLAGS.learning_rate
+    generations = FLAGS.generations
+    run_unit_tests = FLAGS.run_unit_tests
+
+# Run the TensorFlow app
+if __name__ == "__main__":
+    tf.app.run()
+
+
+# Use of TensorFlow's built in logging:
+# Five levels: DEBUG, INFO, WARN, ERROR, and FATAL
+tf.logging.set_verbosity(tf.logging.WARN)
+# WARN is the default value, but to see more information, you can set it to
+#    INFO or DEBUG
+tf.logging.set_verbosity(tf.logging.DEBUG)
+# Note: 'DEBUG' is quite verbose.
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# -*- coding: utf-8 -*-
+# TensorFlow Production Example (Evaluating)
+#----------------------------------
+#
+# We pull together everything and create an example
+#    of best tensorflow production tips
+#
+# The example we will productionalize is the spam/ham RNN
+#    from the RNN Chapter.
+
+import os
+import re
+import numpy as np
+import tensorflow as tf
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+tf.app.flags.DEFINE_string("storage_folder", "temp", "Where to store model and data.")
+tf.app.flags.DEFINE_string('model_file', False, 'Model file location.')
+tf.app.flags.DEFINE_boolean('run_unit_tests', False, 'If true, run tests.')
+FLAGS = tf.app.flags.FLAGS
+
+
+# Create a text cleaning function
+def clean_text(text_string):
+    text_string = re.sub(r'([^\s\w]|_|[0-9])+', '', text_string)
+    text_string = " ".join(text_string.split())
+    text_string = text_string.lower()
+    return(text_string)
+
+
+# Load vocab processor
+def load_vocab():
+    vocab_path = os.path.join(FLAGS.storage_folder, "vocab")
+    vocab_processor = tf.contrib.learn.preprocessing.VocabularyProcessor.restore(vocab_path)
+    return(vocab_processor)
+
+
+# Process input data:
+def process_data(input_data, vocab_processor):
+    input_data = clean_text(input_data)
+    input_data = input_data.split()
+    processed_input = np.array(list(vocab_processor.transform(input_data)))
+    return(processed_input)
+
+
+# Get input function
+def get_input_data():
+    """
+    For this function, we just prompt the user for a text message to evaluate
+        But this function could also potentially read a file in as well.
+    """
+    input_text = input("Please enter a text message to evaluate: ")
+    vocab_processor = load_vocab()
+    return(process_data(input_text, vocab_processor))
+
+
+# Test clean_text function
+class clean_test(tf.test.TestCase):
+    # Make sure cleaning function behaves correctly
+    def clean_string_test(self):
+        with self.test_session():
+            test_input = '--TensorFlow\'s so Great! Don\t you think so?   '
+            test_expected = 'tensorflows so great don you think so'
+            test_out = clean_text(test_input)
+            self.assertEqual(test_expected, test_out)
+
+
+# Main function
+def main(args):
+    # Get flags
+    storage_folder = FLAGS.storage_folder
+    
+    # Get user input text
+    x_data = get_input_data()
+    
+    # Load model
+    graph = tf.Graph()
+    with graph.as_default():
+        sess = tf.Session()
+        with sess.as_default():
+            # Load the saved meta graph and restore variables
+            saver = tf.train.import_meta_graph("{}.meta".format(os.path.join(storage_folder, "model.ckpt")))
+            saver.restore(sess, os.path.join(storage_folder, "model.ckpt"))
+
+            # Get the placeholders from the graph by name
+            x_data_ph = graph.get_operation_by_name("x_data_ph").outputs[0]
+            dropout_keep_prob = graph.get_operation_by_name("dropout_keep_prob").outputs[0]
+            probability_outputs = graph.get_operation_by_name("probability_outputs").outputs[0]
+
+            # Make the prediction
+            eval_feed_dict = {x_data_ph: x_data, dropout_keep_prob: 1.0}
+            probability_prediction = sess.run(tf.reduce_mean(probability_outputs, 0), eval_feed_dict)
+            
+            # Print output (Or save to file or DB connection?)
+            print('Probability of Spam: {:.4}'.format(probability_prediction[1]))
+
+# Run main module/tf App
+if __name__ == "__main__":
+    if FLAGS.run_unit_tests:
+        # Perform unit tests
+        tf.test.main()
+    else:
+        # Run evaluation
+        tf.app.run()
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# -*- coding: utf-8 -*-
+# TensorFlow Production Example (Training)
+#----------------------------------
+#
+# We pull together everything and create an example
+#    of best tensorflow production tips
+#
+# The example we will productionalize is the spam/ham RNN
+#    from 
+
+import os
+import re
+import io
+import requests
+import numpy as np
+import tensorflow as tf
+from zipfile import ZipFile
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Define App Flags
+tf.app.flags.DEFINE_string("storage_folder", "temp", "Where to store model and data.")
+tf.app.flags.DEFINE_float('learning_rate', 0.0005, 'Initial learning rate.')
+tf.app.flags.DEFINE_float('dropout_prob', 0.5, 'Per to keep probability for dropout.')
+tf.app.flags.DEFINE_integer('epochs', 20, 'Number of epochs for training.')
+tf.app.flags.DEFINE_integer('batch_size', 500, 'Batch Size for training.')
+tf.app.flags.DEFINE_integer('max_sequence_length', 20, 'Max sentence length in words.')
+tf.app.flags.DEFINE_integer('rnn_size', 15, 'RNN feature size.')
+tf.app.flags.DEFINE_integer('embedding_size', 25, 'Word embedding size.')
+tf.app.flags.DEFINE_integer('min_word_frequency', 20, 'Word frequency cutoff.')
+tf.app.flags.DEFINE_boolean('run_unit_tests', False, 'If true, run tests.')
+
+FLAGS = tf.app.flags.FLAGS
+
+# Define how to get data
+def get_data(storage_folder=FLAGS.storage_folder, data_file="text_data.txt"):
+    """
+    This function gets the spam/ham data.  It will download it if it doesn't
+    already exist on disk (at specified folder/file location).
+    """
+    # Make a storage folder for models and data
+    if not os.path.exists(storage_folder):
+        os.makedirs(storage_folder)
+    
+    if not os.path.isfile(os.path.join(storage_folder, data_file)):
+        zip_url = 'http://archive.ics.uci.edu/ml/machine-learning-databases/00228/smsspamcollection.zip'
+        r = requests.get(zip_url)
+        z = ZipFile(io.BytesIO(r.content))
+        file = z.read('SMSSpamCollection')
+        # Format Data
+        text_data = file.decode()
+        text_data = text_data.encode('ascii',errors='ignore')
+        text_data = text_data.decode().split('\n')
+
+        # Save data to text file
+        with open(os.path.join(storage_folder, data_file), 'w') as file_conn:
+            for text in text_data:
+                file_conn.write("{}\n".format(text))
+    else:
+        # Open data from text file
+        text_data = []
+        with open(os.path.join(storage_folder, data_file), 'r') as file_conn:
+            for row in file_conn:
+                text_data.append(row)
+        text_data = text_data[:-1]
+    text_data = [x.split('\t') for x in text_data if len(x)>=1]
+    [y_data, x_data] = [list(x) for x in zip(*text_data)]
+    
+    return(x_data, y_data)
+
+
+# Create a text cleaning function
+def clean_text(text_string):
+    text_string = re.sub(r'([^\s\w]|_|[0-9])+', '', text_string)
+    text_string = " ".join(text_string.split())
+    text_string = text_string.lower()
+    return(text_string)
+
+
+# Test clean_text function
+class clean_test(tf.test.TestCase):
+    # Make sure cleaning function behaves correctly
+    def clean_string_test(self):
+        with self.test_session():
+            test_input = '--TensorFlow\'s so Great! Don\t you think so?   '
+            test_expected = 'tensorflows so great don you think so'
+            test_out = clean_text(test_input)
+            self.assertEqual(test_expected, test_out)
+
+# Define RNN Model
+def rnn_model(x_data_ph, max_sequence_length, vocab_size, embedding_size,
+              rnn_size, dropout_keep_prob):
+    # Create embedding
+    embedding_mat = tf.Variable(tf.random_uniform([vocab_size, embedding_size], -1.0, 1.0))
+    embedding_output = tf.nn.embedding_lookup(embedding_mat, x_data_ph)
+
+    # Define the RNN cell
+    cell = tf.contrib.rnn.BasicRNNCell(num_units = rnn_size)
+    output, state = tf.nn.dynamic_rnn(cell, embedding_output, dtype=tf.float32)
+    output = tf.nn.dropout(output, dropout_keep_prob)
+
+    # Get output of RNN sequence
+    output = tf.transpose(output, [1, 0, 2])
+    last = tf.gather(output, int(output.get_shape()[0]) - 1)
+
+
+    weight = tf.Variable(tf.truncated_normal([rnn_size, 2], stddev=0.1))
+    bias = tf.Variable(tf.constant(0.1, shape=[2]))
+    logits_out = tf.matmul(last, weight) + bias
+    
+    return(logits_out)
+
+
+# Define accuracy function
+def get_accuracy(logits, actuals):
+    # Calulate if each output is correct
+    batch_acc = tf.equal(tf.argmax(logits, 1), tf.cast(actuals, tf.int64))
+    # Convert logical to float
+    batch_acc = tf.cast(batch_acc, tf.float32)
+    return(batch_acc)
+
+# Define main program
+def main(args):
+    # Set verbosity to get more information from TensorFlow
+    tf.logging.set_verbosity(tf.logging.INFO)
+    
+    # Create a visualizer object for Tensorboard viewing
+    summary_writer = tf.summary.FileWriter('tensorboard', tf.get_default_graph())
+    # Create tensorboard folder if not exists
+    if not os.path.exists('tensorboard'):
+        os.makedirs('tensorboard')
+    
+    # Set model parameters
+    storage_folder = FLAGS.storage_folder
+    learning_rate = FLAGS.learning_rate
+    run_unit_tests = FLAGS.run_unit_tests
+    epochs = FLAGS.epochs
+    batch_size = FLAGS.batch_size
+    max_sequence_length = FLAGS.max_sequence_length
+    rnn_size = FLAGS.rnn_size
+    embedding_size = FLAGS.embedding_size
+    min_word_frequency = FLAGS.min_word_frequency
+    
+    # Get text->spam/ham data
+    x_data, y_data = get_data()
+    
+    # Clean texts
+    x_data = [clean_text(x) for x in x_data]
+
+    # Change texts into numeric vectors
+    vocab_processor = tf.contrib.learn.preprocessing.VocabularyProcessor(max_sequence_length,
+                                                                         min_frequency=min_word_frequency)
+    text_processed = np.array(list(vocab_processor.fit_transform(x_data)))
+    
+    # Save vocab processor (for loading and future evaluation)
+    vocab_processor.save(os.path.join(storage_folder, "vocab"))
+    
+    # Shuffle and split data
+    text_processed = np.array(text_processed)
+    y_data = np.array([1 if x=='ham' else 0 for x in y_data])
+    shuffled_ix = np.random.permutation(np.arange(len(y_data)))
+    x_shuffled = text_processed[shuffled_ix]
+    y_shuffled = y_data[shuffled_ix]
+
+    # Split train/test set
+    ix_cutoff = int(len(y_shuffled)*0.80)
+    x_train, x_test = x_shuffled[:ix_cutoff], x_shuffled[ix_cutoff:]
+    y_train, y_test = y_shuffled[:ix_cutoff], y_shuffled[ix_cutoff:]
+    vocab_size = len(vocab_processor.vocabulary_)
+
+    with tf.Graph().as_default():
+        sess = tf.Session()
+        # Define placeholders
+        x_data_ph = tf.placeholder(tf.int32, [None, max_sequence_length], name='x_data_ph')
+        y_output_ph = tf.placeholder(tf.int32, [None], name='y_output_ph')
+        dropout_keep_prob = tf.placeholder(tf.float32, name='dropout_keep_prob')
+
+        # Define Model
+        rnn_model_outputs = rnn_model(x_data_ph, max_sequence_length, vocab_size,
+                                      embedding_size, rnn_size, dropout_keep_prob)
+
+        # Prediction
+        # Although we won't use the following operation, we declare and name
+        #   the probability outputs so that we can recall them later for evaluation
+        rnn_prediction = tf.nn.softmax(rnn_model_outputs, name="probability_outputs")
+        
+        # Loss function
+        losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rnn_model_outputs, labels=y_output_ph)
+        # Remember that for this loss function, logits=float32, labels=int32
+        loss = tf.reduce_mean(losses, name="loss")
+
+        # Model Accuracy Operation
+        accuracy = tf.reduce_mean(get_accuracy(rnn_model_outputs, y_output_ph), name="accuracy")
+    
+        # Add scalar summaries for Tensorboard
+        with tf.name_scope('Scalar_Summaries'):
+                tf.summary.scalar('Loss', loss)
+                tf.summary.scalar('Accuracy', accuracy)
+    
+        # Declare Optimizer/train step
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate)
+        train_step = optimizer.minimize(loss)
+        
+        # Declare summary merging operation
+        summary_op = tf.summary.merge_all()
+    
+        # Create a graph/Variable saving/loading operations
+        saver = tf.train.Saver()    
+    
+        init = tf.global_variables_initializer()
+        sess.run(init)
+    
+        # Start training
+        for epoch in range(epochs):
+
+            # Shuffle training data
+            shuffled_ix = np.random.permutation(np.arange(len(x_train)))
+            x_train = x_train[shuffled_ix]
+            y_train = y_train[shuffled_ix]
+            num_batches = int(len(x_train)/batch_size) + 1
+            #
+            for i in range(num_batches):
+                # Select train data
+                min_ix = i * batch_size
+                max_ix = np.min([len(x_train), ((i+1) * batch_size)])
+                x_train_batch = x_train[min_ix:max_ix]
+                y_train_batch = y_train[min_ix:max_ix]
+        
+                # Run train step
+                train_dict = {x_data_ph: x_train_batch,
+                              y_output_ph: y_train_batch,
+                              dropout_keep_prob:0.5}
+                _, summary = sess.run([train_step, summary_op], feed_dict=train_dict)
+                
+                summary_writer = tf.summary.FileWriter('tensorboard')
+                summary_writer.add_summary(summary, i)
+        
+            # Run loss and accuracy for training
+            temp_train_loss, temp_train_acc = sess.run([loss, accuracy], feed_dict=train_dict)
+
+            test_dict = {x_data_ph: x_test, y_output_ph: y_test, dropout_keep_prob:1.0}
+            temp_test_loss, temp_test_acc = sess.run([loss, accuracy], feed_dict=test_dict)
+            
+            # Print Epoch Summary
+            print('Epoch: {}, Train Loss:{:.2}, Train Acc: {:.2}'.format(epoch+1, temp_train_loss, temp_train_acc))
+            print('Epoch: {}, Test Loss: {:.2}, Test Acc: {:.2}'.format(epoch+1, temp_test_loss, temp_test_acc))
+            
+            # Save model every epoch
+            saver.save(sess, os.path.join(storage_folder, "model.ckpt"))
+
+# Run main module/tf App
+if __name__ == "__main__":
+    if FLAGS.run_unit_tests:
+        # Perform unit tests
+        tf.test.main()
+    else:
+        # Run evaluation
+        tf.app.run()
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

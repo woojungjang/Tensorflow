@@ -1,0 +1,429 @@
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Tensors
+#----------------------------------
+#
+# This function introduces various ways to create
+# tensors in TensorFlow
+
+import tensorflow as tf
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Introduce tensors in tf
+
+# Get graph handle
+sess = tf.Session()
+
+my_tensor = tf.zeros([1,20])
+
+# Declare a variable
+my_var = tf.Variable(tf.zeros([1,20]))
+
+# Different kinds of variables
+row_dim = 2
+col_dim = 3 
+
+# Zero initialized variable
+zero_var = tf.Variable(tf.zeros([row_dim, col_dim]))
+
+# One initialized variable
+ones_var = tf.Variable(tf.ones([row_dim, col_dim]))
+
+# shaped like other variable
+sess.run(zero_var.initializer)
+sess.run(ones_var.initializer)
+zero_similar = tf.Variable(tf.zeros_like(zero_var))
+ones_similar = tf.Variable(tf.ones_like(ones_var))
+
+sess.run(ones_similar.initializer)
+sess.run(zero_similar.initializer)
+
+# Fill shape with a constant
+fill_var = tf.Variable(tf.fill([row_dim, col_dim], -1))
+
+# Create a variable from a constant
+const_var = tf.Variable(tf.constant([8, 6, 7, 5, 3, 0, 9]))
+# This can also be used to fill an array:
+const_fill_var = tf.Variable(tf.constant(-1, shape=[row_dim, col_dim]))
+
+# Sequence generation
+linear_var = tf.Variable(tf.linspace(start=0.0, stop=1.0, num=3)) # Generates [0.0, 0.5, 1.0] includes the end
+
+sequence_var = tf.Variable(tf.range(start=6, limit=15, delta=3)) # Generates [6, 9, 12] doesn't include the end
+
+# Random Numbers
+
+# Random Normal
+rnorm_var = tf.random_normal([row_dim, col_dim], mean=0.0, stddev=1.0)
+
+# Add summaries to tensorboard
+merged = tf.summary.merge_all()
+
+# Initialize graph writer:
+
+writer = tf.summary.FileWriter("/tmp/variable_logs", graph=sess.graph)
+
+# Initialize operation
+initialize_op = tf.global_variables_initializer()
+
+# Run initialization of variable
+sess.run(initialize_op)
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Placeholders
+#----------------------------------
+#
+# This function introduces how to 
+# use placeholders in TensorFlow
+
+import numpy as np
+import tensorflow as tf
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Using Placeholders
+sess = tf.Session()
+
+x = tf.placeholder(tf.float32, shape=(4, 4))
+y = tf.identity(x)
+
+rand_array = np.random.rand(4, 4)
+
+merged = tf.summary.merge_all()
+
+writer = tf.summary.FileWriter("/tmp/variable_logs", sess.graph)
+
+print(sess.run(y, feed_dict={x: rand_array}))
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Matrices and Matrix Operations
+#----------------------------------
+#
+# This function introduces various ways to create
+# matrices and how to use them in TensorFlow
+
+import numpy as np
+import tensorflow as tf
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Declaring matrices
+sess = tf.Session()
+
+# Declaring matrices
+
+# Identity matrix
+identity_matrix = tf.diag([1.0,1.0,1.0])
+print(sess.run(identity_matrix))
+
+# 2x3 random norm matrix
+A = tf.truncated_normal([2,3])
+print(sess.run(A))
+
+# 2x3 constant matrix
+B = tf.fill([2,3], 5.0)
+print(sess.run(B))
+
+# 3x2 random uniform matrix
+C = tf.random_uniform([3,2])
+print(sess.run(C))
+print(sess.run(C)) # Note that we are reinitializing, hence the new random variabels
+
+# Create matrix from np array
+D = tf.convert_to_tensor(np.array([[1., 2., 3.], [-3., -7., -1.], [0., 5., -2.]]))
+print(sess.run(D))
+
+# Matrix addition/subtraction
+print(sess.run(A+B))
+print(sess.run(B-B))
+
+# Matrix Multiplication
+print(sess.run(tf.matmul(B, identity_matrix)))
+
+# Matrix Transpose
+print(sess.run(tf.transpose(C))) # Again, new random variables
+
+# Matrix Determinant
+print(sess.run(tf.matrix_determinant(D)))
+
+# Matrix Inverse
+print(sess.run(tf.matrix_inverse(D)))
+
+# Cholesky Decomposition
+print(sess.run(tf.cholesky(identity_matrix)))
+
+# Eigenvalues and Eigenvectors
+print(sess.run(tf.self_adjoint_eig(D)))
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Operations
+#----------------------------------
+#
+# This function introduces various operations
+# in TensorFlow
+
+# Declaring Operations
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Open graph session
+sess = tf.Session()
+
+# div() vs truediv() vs floordiv()
+print(sess.run(tf.div(3,4)))
+print(sess.run(tf.truediv(3,4)))
+print(sess.run(tf.floordiv(3.0,4.0)))
+
+# Mod function
+print(sess.run(tf.mod(22.0,5.0)))
+
+# Cross Product
+print(sess.run(tf.cross([1.,0.,0.],[0.,1.,0.])))
+
+# Trig functions
+print(sess.run(tf.sin(3.1416)))
+print(sess.run(tf.cos(3.1416)))
+# Tangent
+print(sess.run(tf.div(tf.sin(3.1416/4.), tf.cos(3.1416/4.))))
+
+# Custom operation
+test_nums = range(15)
+#from tensorflow.python.ops import math_ops
+#print(sess.run(tf.equal(test_num, 3)))
+def custom_polynomial(x_val):
+    # Return 3x^2 - x + 10
+    return(tf.subtract(3 * tf.square(x_val), x_val) + 10)
+
+print(sess.run(custom_polynomial(11)))
+# What should we get with list comprehension
+expected_output = [3*x*x-x+10 for x in test_nums]
+print(expected_output)
+
+# TensorFlow custom function output
+for num in test_nums:
+    print(sess.run(custom_polynomial(num)))
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Activation Functions
+#----------------------------------
+#
+# This function introduces activation
+# functions in TensorFlow
+
+# Implementing Activation Functions
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+# Open graph session
+sess = tf.Session()
+
+# X range
+x_vals = np.linspace(start=-10., stop=10., num=100)
+
+# ReLU activation
+print(sess.run(tf.nn.relu([-3., 3., 10.])))
+y_relu = sess.run(tf.nn.relu(x_vals))
+
+# ReLU-6 activation
+print(sess.run(tf.nn.relu6([-3., 3., 10.])))
+y_relu6 = sess.run(tf.nn.relu6(x_vals))
+
+# Sigmoid activation
+print(sess.run(tf.nn.sigmoid([-1., 0., 1.])))
+y_sigmoid = sess.run(tf.nn.sigmoid(x_vals))
+
+# Hyper Tangent activation
+print(sess.run(tf.nn.tanh([-1., 0., 1.])))
+y_tanh = sess.run(tf.nn.tanh(x_vals))
+
+# Softsign activation
+print(sess.run(tf.nn.softsign([-1., 0., 1.])))
+y_softsign = sess.run(tf.nn.softsign(x_vals))
+
+# Softplus activation
+print(sess.run(tf.nn.softplus([-1., 0., 1.])))
+y_softplus = sess.run(tf.nn.softplus(x_vals))
+
+# Exponential linear activation
+print(sess.run(tf.nn.elu([-1., 0., 1.])))
+y_elu = sess.run(tf.nn.elu(x_vals))
+
+# Plot the different functions
+plt.plot(x_vals, y_softplus, 'r--', label='Softplus', linewidth=2)
+plt.plot(x_vals, y_relu, 'b:', label='ReLU', linewidth=2)
+plt.plot(x_vals, y_relu6, 'g-.', label='ReLU6', linewidth=2)
+plt.plot(x_vals, y_elu, 'k-', label='ExpLU', linewidth=0.5)
+plt.ylim([-1.5,7])
+plt.legend(loc='upper left')
+plt.show()
+
+plt.plot(x_vals, y_sigmoid, 'r--', label='Sigmoid', linewidth=2)
+plt.plot(x_vals, y_tanh, 'b:', label='Tanh', linewidth=2)
+plt.plot(x_vals, y_softsign, 'g-.', label='Softsign', linewidth=2)
+plt.ylim([-2,2])
+plt.legend(loc='upper left')
+plt.show()
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Data gathering
+#----------------------------------
+#
+# This function gives us the ways to access
+# the various data sets we will need
+
+# Data Gathering
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow.python.framework import ops
+ops.reset_default_graph()
+
+
+# Iris Data
+from sklearn import datasets
+
+iris = datasets.load_iris()
+print(len(iris.data))
+print(len(iris.target))
+print(iris.data[0])
+print(set(iris.target))
+
+# Low Birthrate Data
+import requests
+
+birthdata_url = 'https://github.com/nfmcclure/tensorflow_cookbook/raw/master/01_Introduction/07_Working_with_Data_Sources/birthweight_data/birthweight.dat'
+birth_file = requests.get(birthdata_url)
+birth_data = birth_file.text.split('\r\n')
+birth_header = birth_data[0].split('\t')
+birth_data = [[float(x) for x in y.split('\t') if len(x)>=1] for y in birth_data[1:] if len(y)>=1]
+print(len(birth_data))
+print(len(birth_data[0]))
+
+
+# Housing Price Data
+import requests
+
+housing_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/housing/housing.data'
+housing_header = ['CRIM', 'ZN', 'INDUS', 'CHAS', 'NOX', 'RM', 'AGE', 'DIS', 'RAD', 'TAX', 'PTRATIO', 'B', 'LSTAT', 'MEDV']
+housing_file = requests.get(housing_url)
+housing_data = [[float(x) for x in y.split(' ') if len(x)>=1] for y in housing_file.text.split('\n') if len(y)>=1]
+print(len(housing_data))
+print(len(housing_data[0]))
+
+
+# MNIST Handwriting Data
+from tensorflow.examples.tutorials.mnist import input_data
+
+mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
+print(len(mnist.train.images))
+print(len(mnist.test.images))
+print(len(mnist.validation.images))
+print(mnist.train.labels[1,:])
+
+# CIFAR-10 Image Category Dataset
+# The CIFAR-10 data ( https://www.cs.toronto.edu/~kriz/cifar.html ) contains 60,000 32x32 color images of 10 classes.
+# It was collected by Alex Krizhevsky, Vinod Nair, and Geoffrey Hinton.
+# Alex Krizhevsky maintains the page referenced here.
+# This is such a common dataset, that there are built in functions in TensorFlow to access this data.
+
+# Running this command requires an internet connection and a few minutes to download all the images.
+(X_train, y_train), (X_test, y_test) = tf.contrib.keras.datasets.cifar10.load_data()
+
+print(X_train.shape)
+print(y_train.shape)
+print(y_train[0,]) # this is a frog
+
+# Plot the 0-th image (a frog)
+from PIL import Image
+img = Image.fromarray(X_train[0,:,:,:])
+plt.imshow(img)
+
+
+# Ham/Spam Text Data
+import requests
+import io
+from zipfile import ZipFile
+
+# Get/read zip file
+zip_url = 'http://archive.ics.uci.edu/ml/machine-learning-databases/00228/smsspamcollection.zip'
+r = requests.get(zip_url)
+z = ZipFile(io.BytesIO(r.content))
+file = z.read('SMSSpamCollection')
+# Format Data
+text_data = file.decode()
+text_data = text_data.encode('ascii',errors='ignore')
+text_data = text_data.decode().split('\n')
+text_data = [x.split('\t') for x in text_data if len(x)>=1]
+[text_data_target, text_data_train] = [list(x) for x in zip(*text_data)]
+print(len(text_data_train))
+print(set(text_data_target))
+print(text_data_train[1])
+
+
+# Movie Review Data
+import requests
+import io
+import tarfile
+
+movie_data_url = 'http://www.cs.cornell.edu/people/pabo/movie-review-data/rt-polaritydata.tar.gz'
+r = requests.get(movie_data_url)
+# Stream data into temp object
+stream_data = io.BytesIO(r.content)
+tmp = io.BytesIO()
+while True:
+    s = stream_data.read(16384)
+    if not s:  
+        break
+    tmp.write(s)
+stream_data.close()
+tmp.seek(0)
+# Extract tar file
+tar_file = tarfile.open(fileobj=tmp, mode="r:gz")
+pos = tar_file.extractfile('rt-polaritydata/rt-polarity.pos')
+neg = tar_file.extractfile('rt-polaritydata/rt-polarity.neg')
+# Save pos/neg reviews
+pos_data = []
+for line in pos:
+    pos_data.append(line.decode('ISO-8859-1').encode('ascii',errors='ignore').decode())
+neg_data = []
+for line in neg:
+    neg_data.append(line.decode('ISO-8859-1').encode('ascii',errors='ignore').decode())
+tar_file.close()
+
+print(len(pos_data))
+print(len(neg_data))
+print(neg_data[0])
+
+
+# The Works of Shakespeare Data
+import requests
+
+shakespeare_url = 'http://www.gutenberg.org/cache/epub/100/pg100.txt'
+# Get Shakespeare text
+response = requests.get(shakespeare_url)
+shakespeare_file = response.content
+# Decode binary into string
+shakespeare_text = shakespeare_file.decode('utf-8')
+# Drop first few descriptive paragraphs.
+shakespeare_text = shakespeare_text[7675:]
+print(len(shakespeare_text))
+
+
+# English-German Sentence Translation Data
+import requests
+import io
+from zipfile import ZipFile
+sentence_url = 'http://www.manythings.org/anki/deu-eng.zip'
+r = requests.get(sentence_url)
+z = ZipFile(io.BytesIO(r.content))
+file = z.read('deu.txt')
+# Format Data
+eng_ger_data = file.decode()
+eng_ger_data = eng_ger_data.encode('ascii',errors='ignore')
+eng_ger_data = eng_ger_data.decode().split('\n')
+eng_ger_data = [x.split('\t') for x in eng_ger_data if len(x)>=1]
+[english_sentence, german_sentence] = [list(x) for x in zip(*eng_ger_data)]
+print(len(english_sentence))
+print(len(german_sentence))
+print(eng_ger_data[10])
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
