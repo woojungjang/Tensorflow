@@ -1,3 +1,7 @@
+#http://scikit-learn.org/stable/index.html
+#sklearn.svm.SVC
+#http://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html
+
 from sklearn import svm, metrics
 import random, re
 # 붓꽃의 CSV 데이터 읽어 들이기 --- (※1)
