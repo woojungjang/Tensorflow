@@ -13,27 +13,27 @@ import numpy as np
 import requests
 import gzip
 
-# Normalize text 사전처리
+# Normalize text 
 def normalize_text(texts, stops):
     # Lower case
-    texts = [x.lower() for x in texts]
+    texts = [x.lower() for x in texts] #소문자
 
     # Remove punctuation
-    texts = [''.join(c for c in x if c not in string.punctuation) for x in texts]
+    texts = [''.join(c for c in x if c not in string.punctuation) for x in texts] #구두점삭제
 
     # Remove numbers
-    texts = [''.join(c for c in x if c not in '0123456789') for x in texts]
+    texts = [''.join(c for c in x if c not in '0123456789') for x in texts] #숫자없애기
 
     # Remove stopwords
-    texts = [' '.join([word for word in x.split() if word not in (stops)]) for x in texts]
+    texts = [' '.join([word for word in x.split() if word not in (stops)]) for x in texts] #불용어 없애기
 
     # Trim extra whitespace
-    texts = [' '.join(x.split()) for x in texts]
+    texts = [' '.join(x.split()) for x in texts] #띄어쓰기 없애기
     
     return(texts)
 
 
-# Build dictionary of words
+# Build dictionary of words 
 def build_dictionary(sentences, vocabulary_size):
     # Turn sentences (list of strings) into lists of words
     split_sentences = [s.split() for s in sentences]
@@ -62,7 +62,7 @@ def text_to_numbers(sentences, word_dict):
     for sentence in sentences:
         sentence_data = []
         # For each word, either use selected index or rare word index
-        for word in sentence.split(' '):
+        for word in sentence.split():
             if word in word_dict:
                 word_ix = word_dict[word]
             else:
@@ -74,58 +74,68 @@ def text_to_numbers(sentences, word_dict):
 
 # Generate data randomly (N words behind, target, N words ahead)
 def generate_batch_data(sentences, batch_size, window_size, method='skip_gram'):
-    # Fill up data batch
+    # 일괄 작업 데이터 채우기
     batch_data = []
     label_data = []
     while len(batch_data) < batch_size:
-        # select random sentence to start
+        # 시작할 문장을 임의로 선택한다.
         rand_sentence_ix = int(np.random.choice(len(sentences), size=1))
         rand_sentence = sentences[rand_sentence_ix]
-        # Generate consecutive windows to look at
+        
+        # 탐색할 연속 범위를 생성한다.
         window_sequences = [rand_sentence[max((ix-window_size),0):(ix+window_size+1)] for ix, x in enumerate(rand_sentence)]
-        # Denote which element of each window is the center word of interest
+        
+        # 단어의 중심 단어를 표시한다.
         label_indices = [ix if ix<window_size else window_size for ix,x in enumerate(window_sequences)]
         
-        # Pull out center word of interest for each window and create a tuple for each window
+        # 범위에서 중심 단어를 추출하고, 범위에 해당하는 단어 쌍을 생성한다.
         if method=='skip_gram':
             batch_and_labels = [(x[y], x[:y] + x[(y+1):]) for x,y in zip(window_sequences, label_indices)]
-            # Make it in to a big list of tuples (target word, surrounding word)
+            
+            # 커다란 튜플 리스트 생성
             tuple_data = [(x, y_) for x,y in batch_and_labels for y_ in y]
             batch, labels = [list(x) for x in zip(*tuple_data)]
         elif method=='cbow':
             batch_and_labels = [(x[:y] + x[(y+1):], x[y]) for x,y in zip(window_sequences, label_indices)]
-            # Only keep windows with consistent 2*window_size
+            
+            # 2 * window_size의 범위에 있는 데이터만 처리한다.
             batch_and_labels = [(x,y) for x,y in batch_and_labels if len(x)==2*window_size]
             batch, labels = [list(x) for x in zip(*batch_and_labels)]
         elif method=='doc2vec':
-            # For doc2vec we keep LHS window only to predict target word
+            # doc2vec의 경우 왼쪽 범위만으로 대상 단어를 예측하도록 한다.
             batch_and_labels = [(rand_sentence[i:i+window_size], rand_sentence[i+window_size]) for i in range(0, len(rand_sentence)-window_size)]
             batch, labels = [list(x) for x in zip(*batch_and_labels)]
-            # Add document index to batch!! Remember that we must extract the last index in batch for the doc-index
+
+            # 문서 색인을 일괄 작업에 추가한다.
+            # 마지막으로 일괄 작업 번호를 문서 색인 값으로 사용한다.
             batch = [x + [rand_sentence_ix] for x in batch]
         else:
             raise ValueError('Method {} not implemented yet.'.format(method))
             
-        # extract batch and labels
+        # 일괄 작업과 라벨 추출
         batch_data.extend(batch[:batch_size])
         label_data.extend(labels[:batch_size])
-    # Trim batch and label at the end
+        
+    # 마지막 데이터 잘라 내기
     batch_data = batch_data[:batch_size]
     label_data = label_data[:batch_size]
     
-    # Convert to numpy array
+    # numpy 배열 형식으로 변환한다.
     batch_data = np.array(batch_data)
     label_data = np.transpose(np.array([label_data]))
     
     return(batch_data, label_data)
     
     
+###################################################################################################
+# 함수 load_movie_data : 파일을 읽어 들여서 데이터를 만들어 준다.
 # Load the movie review data
 # Check if data was downloaded, otherwise download it and save for future use
+###################################################################################################
 def load_movie_data():
     save_folder_name = 'temp'
-    pos_file = os.path.join(save_folder_name, 'rt-polaritydata', 'rt-polarity.pos')
-    neg_file = os.path.join(save_folder_name, 'rt-polaritydata', 'rt-polarity.neg')
+    pos_file = os.path.join(save_folder_name, 'rt-polaritydata', 'rt-polarity.pos') # pos 좋은평, neg나쁜평, 
+    neg_file = os.path.join(save_folder_name, 'rt-polaritydata', 'rt-polarity.neg') # 파일객체로 만들어줌
 
     # Check if files are already downloaded
     if not os.path.exists(os.path.join(save_folder_name, 'rt-polaritydata')):
@@ -139,7 +149,7 @@ def load_movie_data():
                     f.write(chunk)
                     f.flush()
         # Extract tar.gz file into temp folder
-        tar = tarfile.open('temp_movie_review_temp.tar.gz', "r:gz")
+        tar = tarfile.open('temp_movie_review_temp.tar.gz', "r:gz") # tar zip파일과 동일
         tar.extractall(path='temp')
         tar.close()
 
